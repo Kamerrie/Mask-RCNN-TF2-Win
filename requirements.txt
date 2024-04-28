@@ -12,3 +12,4 @@ h5py==2.10.0
 imgaug
 protobuf<=3.20
 IPython[all]
+# Don't forget to also "pip install ." for mrcnn
