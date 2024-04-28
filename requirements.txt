@@ -1,5 +1,5 @@
 # Python 3.8.10
-numpy
+numpy==1.18.5
 scipy
 Pillow
 cython
@@ -10,4 +10,5 @@ keras==2.3.1
 opencv-python
 h5py==2.10.0
 imgaug
+protobuf<=3.20
 IPython[all]
