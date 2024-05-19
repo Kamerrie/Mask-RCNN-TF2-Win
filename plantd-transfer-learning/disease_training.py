@@ -5,6 +5,10 @@ import xml.etree.ElementTree as ET
 from mrcnn import utils
 from mrcnn import model as modellib
 from mrcnn import config
+import tensorflow as tf
+tf.get_logger().setLevel('DEBUG')
+tf.debugging.set_log_device_placement(True)
+
 # run while working directory contains both the dataset folder + coco weights file.
 class PlantDiseaseDataset(utils.Dataset):
     def load_dataset(self, dataset_dir, is_train=True):
@@ -68,7 +72,7 @@ class PlantDiseaseConfig(config.Config):
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + disease
-    STEPS_PER_EPOCH = 100
+    STEPS_PER_EPOCH = 588
 
 # Setup paths in an OS-agnostic way
 dataset_root_path = os.path.join(os.getcwd(), 'data')
@@ -81,11 +85,29 @@ validation_dataset = PlantDiseaseDataset()
 validation_dataset.load_dataset(dataset_root_path, is_train=False)
 validation_dataset.prepare()
 
-config = PlantDiseaseConfig()
-model = modellib.MaskRCNN(mode='training', model_dir='./', config=config)
+plant_config = PlantDiseaseConfig()
+model = modellib.MaskRCNN(mode='training', model_dir='./', config=plant_config)
 model.load_weights('mask_rcnn_coco.h5', by_name=True, exclude=["mrcnn_class_logits", "mrcnn_bbox_fc", "mrcnn_bbox", "mrcnn_mask"])
 #set to 1 epoch for testing. eventually set to same as deeplabv3+. maybe 25?
-model.train(train_dataset, validation_dataset, learning_rate=config.LEARNING_RATE, epochs=1, layers='heads')
+
+# Quick check to print out what the data generator yields
+for image_id in train_dataset.image_ids[:1]:  # Check the first image
+    masks, class_ids = train_dataset.load_mask(image_id)
+    print("Masks shape:", masks.shape)
+    print("Class IDs:", class_ids)
+    if masks.size == 0:
+        print("Warning: No masks found for image_id:", image_id)
+
+print("Starting training...")
+try:
+    model.train(train_dataset, validation_dataset,
+                learning_rate=plant_config.LEARNING_RATE,
+                epochs=1,
+                layers='heads')
+    print("Training completed successfully.")
+except Exception as e:
+    print("Error during training:", str(e))
+
 
 model_path = 'plant_disease_mask_rcnn.h5'
 model.keras_model.save_weights(model_path)

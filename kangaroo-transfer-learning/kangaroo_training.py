@@ -12,8 +12,8 @@ class KangarooDataset(mrcnn.utils.Dataset):
         # Adds information (image ID, image path, and annotation file path) about each image in a dictionary.
         self.add_class("dataset", 1, "kangaroo")
 
-        images_dir = os.path.join(os.path.abspath('.'), "kangaroo-transfer-learning", dataset_dir, 'images')
-        annotations_dir = os.path.join(os.path.abspath('.'),"kangaroo-transfer-learning", dataset_dir, 'annots')
+        images_dir = os.path.join(os.path.abspath('.'), "Mask-RCNN-TF2-Win", "kangaroo-transfer-learning", dataset_dir, 'images')
+        annotations_dir = os.path.join(os.path.abspath('.'), "Mask-RCNN-TF2-Win","kangaroo-transfer-learning", dataset_dir, 'annots')
 
         for filename in os.listdir(images_dir):
             image_id = filename[:-4]

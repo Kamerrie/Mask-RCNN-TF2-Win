@@ -22,6 +22,8 @@ import keras.backend as K
 import keras.layers as KL
 import keras.engine as KE
 import keras.models as KM
+tf.get_logger().setLevel('DEBUG')
+tf.debugging.set_log_device_placement(True)
 
 from mrcnn import utils
 
