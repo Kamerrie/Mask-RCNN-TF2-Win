@@ -3,7 +3,9 @@ datasets/
 logs/
 *.h5
 results/
-temp/
+temp/90
+temp/90
+temp/90
 test/
 kangaroo_cfg*/
 *.xml
