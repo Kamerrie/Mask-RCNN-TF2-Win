@@ -1,13 +1,16 @@
 # Python 3.8.10
+# additions of mine
+
+#Came with the repo, after some tweaking...
 numpy==1.18.5
 scipy
 Pillow
 cython
-matplotlib
+matplotlib 
 scikit-image==0.16.2
-tensorflow>=2.0.0
+tensorflow==2.2.0
 keras==2.3.1
-opencv-python
+opencv-python>=4.9
 h5py==2.10.0
 imgaug
 protobuf<=3.20
