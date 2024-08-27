@@ -16,6 +16,7 @@ from datetime import datetime
 DATASET_DIR = os.path.join(os.getcwd(), "data") # volume where the images wind up
 MASKRCNN_DIR = os.path.join(os.getcwd(), "maskrcnn") # volume where we will keep logs/models(weights)
 MODEL_DIR = os.path.join(MASKRCNN_DIR, "models") # the model directory within the mrcnn volume
+LOG_DIR = os.path.join(MASKRCNN_DIR, "logs")
 #PRE_TRAINED_PATH
 
 # Useful vars
@@ -112,7 +113,7 @@ model = mrcnn.model.MaskRCNN(mode="training", config=training_config, model_dir=
 
 # Setting up custom callbacks to collect logs, metrics, make checkpoints, and save the best model based on mean IoU
 class MetricsCallback(tf.keras.callbacks.Callback):
-    def __init__(self, log_file='maskrcnn.log'):
+    def __init__(self, log_file=os.path.join(LOG_DIR, "maskrcnn.log")):
         super(MetricsCallback, self).__init__()
         self.log_file = log_file
         self.start_time = None
@@ -206,6 +207,13 @@ class MetricsCallback(tf.keras.callbacks.Callback):
             f.write(f"{self.start_time.strftime('%Y-%m-%d %H:%M:%S')},{epoch + 1},{formatted_end_time},{epoch_duration:.2f},{mean_iou_value:.4f},{mean_precision:.4f},{mean_recall:.4f},{mean_f1_score:.4f}\n")
         
         self.start_time = datetime.now()
+
+        contents = os.listdir(os.path.join(DATASET_DIR, "val", "images"))
+        print(f'Contents of the val/images/ directory:')
+        for item in contents:
+            print(item)
+        print(f'total train: {total_train_images}')
+        print(f'total train: {total_val_images}')
 
         for metric_name, metric_value in logs.items():
             print(f'{metric_name}: {metric_value:.4f}')
