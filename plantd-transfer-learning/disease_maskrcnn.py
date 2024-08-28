@@ -11,15 +11,27 @@ import mrcnn.model
 import tensorflow as tf
 
 from datetime import datetime
+import glob
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+tf.get_logger().setLevel('WARNING')
 
 # Dirs
 DATASET_DIR = os.path.join(os.getcwd(), "data") # volume where the images wind up
 MASKRCNN_DIR = os.path.join(os.getcwd(), "maskrcnn") # volume where we will keep logs/models(weights)
 MODEL_DIR = os.path.join(MASKRCNN_DIR, "models") # the model directory within the mrcnn volume
 LOG_DIR = os.path.join(MASKRCNN_DIR, "logs")
+WEIGHTS_DIR = os.path.join(MODEL_DIR, "weights")
+
+if not os.path.exists(os.path.join(LOG_DIR)):
+        os.makedirs(os.path.join(LOG_DIR))
+if not os.path.exists(os.path.join(WEIGHTS_DIR)):
+        os.makedirs(os.path.join(WEIGHTS_DIR))
+
 #PRE_TRAINED_PATH
 
 # Useful vars
+total_epochs = 100
 total_train_images = len([name for name in os.listdir(os.path.join(DATASET_DIR, "train", "images")) if os.path.isfile(os.path.join(os.path.join(DATASET_DIR, "train", "images"), name)) and name.endswith('.jpg')])
 total_val_images = len([name for name in os.listdir(os.path.join(DATASET_DIR, "val", "images")) if os.path.isfile(os.path.join(os.path.join(DATASET_DIR, "val", "images"), name)) and name.endswith('.jpg')])
 
@@ -118,11 +130,11 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         self.log_file = log_file
         self.start_time = None
         self.best_mean_iou = 0.0  # Initialize best IoU to a low value
-        self.best_checkpoint_path = 'best_model.h5'  # Path to save the best model
+        self.best_checkpoint_path = os.path.join(WEIGHTS_DIR, "best_model.h5")  # Path to save the best model
 
         if not os.path.exists(self.log_file):
             with open(self.log_file, 'w') as f:
-                f.write("start_time,epoch,end_time,epoch_duration,mean_iou,mean_precision,mean_recall,mean_f1_score\n")
+                f.write("start_time,epoch,end_time,epoch_duration,loss,val_loss,mean_iou,mean_precision,mean_recall,mean_f1_score\n")
 
     def on_train_begin(self, logs=None):
         self.start_time = datetime.now()
@@ -130,7 +142,7 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         print(f"Training started at: {formatted_start_time}")
 
         with open(self.log_file, 'a') as f:
-            f.write(f"{formatted_start_time},N/A,N/A,N/A,N/A,N/A,N/A,N/A\n")
+            f.write(f"{formatted_start_time},N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A\n")
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
@@ -139,12 +151,13 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         epoch_duration = (end_time - self.start_time).total_seconds()
         formatted_end_time = end_time.strftime("%Y-%m-%d %H:%M:%S")
 
-        model_path = f'Disease_mask_rcnn_epoch_{epoch + 1}.h5'
+        model_name = f'Disease_mask_rcnn_epoch_{epoch + 1}.h5'
+        model_path = os.path.join(WEIGHTS_DIR, model_name)
         self.model.save_weights(model_path)
 
         # Create inference model after saving weights
         inference_model = mrcnn.model.MaskRCNN(mode='inference', 
-                                               model_dir='./', 
+                                               model_dir=MODEL_DIR, 
                                                config=inference_config)
         inference_model.load_weights(model_path, by_name=True)
 
@@ -197,6 +210,8 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         logs['mean_precision'] = mean_precision
         logs['mean_recall'] = mean_recall
         logs['mean_f1_score'] = mean_f1_score
+        loss = logs.get('loss', 'N/A')
+        val_loss = logs.get('val_loss', 'N/A')
 
         if mean_iou_value > self.best_mean_iou:
             print(f"Mean IoU improved from {self.best_mean_iou:.4f} to {mean_iou_value:.4f}. Saving model checkpoint.")
@@ -204,16 +219,9 @@ class MetricsCallback(tf.keras.callbacks.Callback):
             self.model.save_weights(self.best_checkpoint_path)
 
         with open(self.log_file, 'a') as f:
-            f.write(f"{self.start_time.strftime('%Y-%m-%d %H:%M:%S')},{epoch + 1},{formatted_end_time},{epoch_duration:.2f},{mean_iou_value:.4f},{mean_precision:.4f},{mean_recall:.4f},{mean_f1_score:.4f}\n")
-        
-        self.start_time = datetime.now()
+            f.write(f"{self.start_time.strftime('%Y-%m-%d %H:%M:%S')},{epoch + 1},{formatted_end_time},{epoch_duration:.2f},{loss:.4f},{val_loss:.4f},{mean_iou_value:.4f},{mean_precision:.4f},{mean_recall:.4f},{mean_f1_score:.4f}\n")
 
-        contents = os.listdir(os.path.join(DATASET_DIR, "val", "images"))
-        print(f'Contents of the val/images/ directory:')
-        for item in contents:
-            print(item)
-        print(f'total train: {total_train_images}')
-        print(f'total train: {total_val_images}')
+        self.start_time = datetime.now()
 
         for metric_name, metric_value in logs.items():
             print(f'{metric_name}: {metric_value:.4f}')
@@ -221,11 +229,22 @@ class MetricsCallback(tf.keras.callbacks.Callback):
 # Training logic with Mask R-CNN setup
 metrics_callback = MetricsCallback()
 
+# if a checkpoint is found, load that
+def get_latest_checkpoint(model_dir):
+    checkpoints = glob.glob(os.path.join(model_dir, '*', 'mask_rcnn*.h5'))
+    if checkpoints:
+        return max(checkpoints, key=os.path.getctime)  # Get the most recently created checkpoint
+    return None
+
+# Before starting training, load the latest checkpoint if it exists
+latest_checkpoint = get_latest_checkpoint(MODEL_DIR)
+if latest_checkpoint:
+    print(f"Loading weights from: {latest_checkpoint}")
+    model.load_weights(latest_checkpoint, by_name=True)
 
 # Train the model
 model.train(dataset_train, dataset_val,
             learning_rate=training_config.LEARNING_RATE,
-            epochs=30,
+            epochs=total_epochs,
             layers='heads',
             custom_callbacks=[metrics_callback])
-
