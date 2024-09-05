@@ -59,5 +59,11 @@ RUN python -m pip install -r requirements.txt
 # Copy this at the end to prevent redoing pip installs.
 COPY plantd-transfer-learning/disease_maskrcnn.py /app/
 
+# Settings some env vars for tensorflow, logs, and memory management
+ENV TF_GPU_ALLOCATOR=cuda_malloc_async
+ENV PYTHONUNBUFFERED=1
+ENV TF_CPP_MIN_LOG_LEVEL=2
+ENV TF_FORCE_GPU_ALLOW_GROWTH=true
+
 # Set the entrypoint to run your training script
 CMD ["python", "disease_maskrcnn.py"]
