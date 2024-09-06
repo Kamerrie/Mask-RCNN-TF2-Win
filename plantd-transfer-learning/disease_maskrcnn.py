@@ -25,6 +25,7 @@ WEIGHTS_DIR = os.path.join(MODEL_DIR, "weights")
 BEST_MODEL_PATH = os.path.join(WEIGHTS_DIR, "best_model.h5")
 EPOCH_FILE_PATH = os.path.join(MODEL_DIR, "last_epoch.txt")
 BEST_IOU_FILE_PATH = os.path.join(MODEL_DIR, "best_best_iou.txt")
+WAIT_COUNTER_FILE_PATH = os.path.join(MODEL_DIR, "wait_counter.txt")
 
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
@@ -64,9 +65,24 @@ def write_best_iou(file_path, mean_iou):
         f.write(str(mean_iou))
 
 
-# Set initial_epoch and best_iou from files
+def read_wait_counter(file_path):
+    """Reads the wait counter from a file."""
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            return int(f.read().strip())
+    return 0  # If the file doesn't exist, return 0 (no wait yet)
+
+
+def write_wait_counter(file_path, wait):
+    """Writes the wait counter to a file."""
+    with open(file_path, 'w') as f:
+        f.write(str(wait))
+
+
+# Set initial_epoch, best_iou, and wait from files
 initial_epoch = read_last_epoch(EPOCH_FILE_PATH)
 best_iou = read_best_iou(BEST_IOU_FILE_PATH)
+wait_counter = read_wait_counter(WAIT_COUNTER_FILE_PATH)
 
 
 # Datasets setup
@@ -130,14 +146,16 @@ dataset_val.prepare()
 # Model Initialization
 model = mrcnn.model.MaskRCNN(mode="training", config=training_config, model_dir=MODEL_DIR)
 
-# Custom Callback for Metrics and Model Checkpointing
+# Custom Callback for Metrics, Early Stopping and Model Checkpointing
 class MetricsCallback(tf.keras.callbacks.Callback):
-    def __init__(self, log_file=os.path.join(LOG_DIR, "maskrcnn.log")):
+    def __init__(self, log_file=os.path.join(LOG_DIR, "maskrcnn.log"), patience=10):
         super(MetricsCallback, self).__init__()
         self.log_file = log_file
         self.start_time = None
         self.best_iou = best_iou  # Initialize with the loaded best iou
         self.best_checkpoint_path = BEST_MODEL_PATH
+        self.patience = patience  # Early stopping patience (number of epochs without improvement)
+        self.wait = wait_counter  # Initialize with the loaded wait counter
 
         if not os.path.exists(self.log_file):
             with open(self.log_file, 'w') as f:
@@ -148,9 +166,6 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         self.start_time = datetime.now()
         formatted_start_time = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
         print(f"Training started at: {formatted_start_time}")
-
-        #with open(self.log_file, 'a') as f:
-            #f.write(f"{formatted_start_time},N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A\n")
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
@@ -164,7 +179,6 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         model_name = f'Disease_mask_rcnn_epoch_{read_last_epoch(EPOCH_FILE_PATH)}.h5'
         model_path = os.path.join(WEIGHTS_DIR, model_name)
         self.model.save_weights(model_path)
-
 
         # Evaluate model on validation data and compute custom metrics
         inference_model = mrcnn.model.MaskRCNN(mode='inference',
@@ -221,11 +235,22 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         loss = logs.get('loss', 'N/A')
         val_loss = logs.get('val_loss', 'N/A')
 
-        if mean_iou_value < self.best_iou:
-            print(f"Validation loss improved from {self.best_iou:.4f} to {mean_iou_value:.4f}. Saving model checkpoint.")
+        # Check if the current IoU is better than the best IoU
+        if mean_iou_value > self.best_iou:
+            print(f"Mean IoU improved from {self.best_iou:.4f} to {mean_iou_value:.4f}. Saving model checkpoint.")
             self.best_iou = mean_iou_value
             self.model.save_weights(self.best_checkpoint_path)
             write_best_iou(BEST_IOU_FILE_PATH, mean_iou_value)
+            self.wait = 0  # Reset the counter if the IoU improves
+        else:
+            self.wait += 1  # Increment the counter if no improvement
+            print(f"No improvement in IoU for {self.wait} epoch(s).")
+        write_wait_counter(WAIT_COUNTER_FILE_PATH, self.wait)  # Save the wait counter to file
+
+        # Early stopping condition
+        if self.wait >= self.patience:
+            print(f"Stopping training after {self.patience} epochs without improvement in IoU.")
+            self.model.stop_training = True
 
         with open(self.log_file, 'a') as f:
             f.write(f"{self.start_time.strftime('%Y-%m-%d %H:%M:%S')},{read_last_epoch(EPOCH_FILE_PATH)},{formatted_end_time},{epoch_duration:.2f},{loss:.4f},{val_loss:.4f},{mean_iou_value:.4f},{mean_precision:.4f},{mean_recall:.4f},{mean_f1_score:.4f}\n")
@@ -237,7 +262,7 @@ class MetricsCallback(tf.keras.callbacks.Callback):
 
 
 # Training Logic with Mask R-CNN Setup
-metrics_callback = MetricsCallback()
+metrics_callback = MetricsCallback(patience=10)  # Set patience to 10 epochs
 
 # Load the best model checkpoint if it exists
 if os.path.exists(BEST_MODEL_PATH):
@@ -247,10 +272,10 @@ else:
     print("No best model found, starting from scratch.")
 
 # Manually control the training loop to restart from a specific epoch
-# This is because the training crashes every so often
 for epoch in range(initial_epoch, total_epochs):
-    print(f"epoch: {epoch}, init epoch: {initial_epoch}, total epoch: {total_epochs}")
-    model.train(dataset_train, dataset_val,
+    print(f"epoch: {epoch}, init epoch: {initial_epoch}, total epoch: {total_epochs}, wait counter: {wait_counter}")
+    if(wait_counter < 10):
+        model.train(dataset_train, dataset_val,
                 learning_rate=training_config.LEARNING_RATE,
                 epochs=total_epochs-initial_epoch,
                 layers='heads',
