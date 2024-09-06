@@ -255,4 +255,3 @@ for epoch in range(initial_epoch, total_epochs):
                 epochs=total_epochs-initial_epoch,
                 layers='heads',
                 custom_callbacks=[metrics_callback])
-    break
