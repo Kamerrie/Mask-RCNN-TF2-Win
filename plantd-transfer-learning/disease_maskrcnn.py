@@ -24,7 +24,7 @@ LOG_DIR = os.path.join(MASKRCNN_DIR, "logs")
 WEIGHTS_DIR = os.path.join(MODEL_DIR, "weights")
 BEST_MODEL_PATH = os.path.join(WEIGHTS_DIR, "best_model.h5")
 EPOCH_FILE_PATH = os.path.join(MODEL_DIR, "last_epoch.txt")
-BEST_VAL_LOSS_FILE_PATH = os.path.join(MODEL_DIR, "best_val_loss.txt")
+BEST_IOU_FILE_PATH = os.path.join(MODEL_DIR, "best_best_iou.txt")
 
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
@@ -52,23 +52,21 @@ def write_last_epoch(file_path, epoch):
         f.write(str(epoch))
 
 
-def read_best_val_loss(file_path):
-    """Reads the best validation loss from the file."""
+def read_best_iou(file_path):
     if os.path.exists(file_path):
         with open(file_path, 'r') as f:
             return float(f.read().strip())
-    return np.inf  # If no file exists, return infinity to ensure any new loss is better
+    return 0  # If no file exists, return infinity to ensure any new loss is better
 
 
-def write_best_val_loss(file_path, val_loss):
-    """Writes the best validation loss to the file."""
+def write_best_iou(file_path, mean_iou):
     with open(file_path, 'w') as f:
-        f.write(str(val_loss))
+        f.write(str(mean_iou))
 
 
-# Set initial_epoch and best_val_loss from files
+# Set initial_epoch and best_iou from files
 initial_epoch = read_last_epoch(EPOCH_FILE_PATH)
-best_val_loss = read_best_val_loss(BEST_VAL_LOSS_FILE_PATH)
+best_iou = read_best_iou(BEST_IOU_FILE_PATH)
 
 
 # Datasets setup
@@ -138,7 +136,7 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         super(MetricsCallback, self).__init__()
         self.log_file = log_file
         self.start_time = None
-        self.best_val_loss = best_val_loss  # Initialize with the loaded best validation loss
+        self.best_iou = best_iou  # Initialize with the loaded best iou
         self.best_checkpoint_path = BEST_MODEL_PATH
 
         if not os.path.exists(self.log_file):
@@ -158,7 +156,7 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         logs = logs or {}
         # Update the epoch file
         write_last_epoch(EPOCH_FILE_PATH, read_last_epoch(EPOCH_FILE_PATH) + 1)
-        print(f'\nEpoch {epoch + 1} Metrics:')
+        print(f'\nEpoch {read_last_epoch(EPOCH_FILE_PATH)} Metrics:')
         end_time = datetime.now()
         epoch_duration = (end_time - self.start_time).total_seconds()
         formatted_end_time = end_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -223,11 +221,11 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         loss = logs.get('loss', 'N/A')
         val_loss = logs.get('val_loss', 'N/A')
 
-        if val_loss < self.best_val_loss:
-            print(f"Validation loss improved from {self.best_val_loss:.4f} to {val_loss:.4f}. Saving model checkpoint.")
-            self.best_val_loss = val_loss
+        if mean_iou_value < self.best_iou:
+            print(f"Validation loss improved from {self.best_iou:.4f} to {mean_iou_value:.4f}. Saving model checkpoint.")
+            self.best_iou = mean_iou_value
             self.model.save_weights(self.best_checkpoint_path)
-            write_best_val_loss(BEST_VAL_LOSS_FILE_PATH, val_loss)
+            write_best_iou(BEST_IOU_FILE_PATH, mean_iou_value)
 
         with open(self.log_file, 'a') as f:
             f.write(f"{self.start_time.strftime('%Y-%m-%d %H:%M:%S')},{read_last_epoch(EPOCH_FILE_PATH)},{formatted_end_time},{epoch_duration:.2f},{loss:.4f},{val_loss:.4f},{mean_iou_value:.4f},{mean_precision:.4f},{mean_recall:.4f},{mean_f1_score:.4f}\n")
@@ -249,12 +247,12 @@ else:
     print("No best model found, starting from scratch.")
 
 # Manually control the training loop to restart from a specific epoch
+# This is because the training crashes every so often
 for epoch in range(initial_epoch, total_epochs):
     print(f"epoch: {epoch}, init epoch: {initial_epoch}, total epoch: {total_epochs}")
     model.train(dataset_train, dataset_val,
                 learning_rate=training_config.LEARNING_RATE,
-                epochs=total_epochs-initial_epoch,  # Incrementally increase the epoch count
+                epochs=total_epochs-initial_epoch,
                 layers='heads',
                 custom_callbacks=[metrics_callback])
-    # After each epoch, exit and let the script restart to simulate a crash/restart
     break
