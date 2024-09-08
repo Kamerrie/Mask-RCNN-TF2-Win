@@ -256,5 +256,3 @@ for epoch in range(initial_epoch, total_epochs):
                 epochs=total_epochs-initial_epoch,  # Incrementally increase the epoch count
                 layers='heads',
                 custom_callbacks=[metrics_callback])
-    # After each epoch, exit and let the script restart to simulate a crash/restart
-    break
