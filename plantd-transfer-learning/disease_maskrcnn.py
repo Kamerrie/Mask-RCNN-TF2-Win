@@ -16,10 +16,9 @@ import glob
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 tf.get_logger().setLevel('WARNING')
 
-# Directories
-DATASET_DIR = os.path.join(os.getcwd(), "data")  # Volume where the images wind up
-MASKRCNN_DIR = os.path.join(os.getcwd(), "maskrcnn")  # Volume where we will keep logs/models(weights)
-MODEL_DIR = os.path.join(MASKRCNN_DIR, "models")  # Model directory within the mrcnn volume
+DATASET_DIR = os.path.join(os.getcwd(), "data")
+MASKRCNN_DIR = os.path.join(os.getcwd(), "maskrcnn")
+MODEL_DIR = os.path.join(MASKRCNN_DIR, "models")
 LOG_DIR = os.path.join(MASKRCNN_DIR, "logs")
 WEIGHTS_DIR = os.path.join(MODEL_DIR, "weights")
 BEST_MODEL_PATH = os.path.join(WEIGHTS_DIR, "best_model.h5")
@@ -32,15 +31,12 @@ if not os.path.exists(LOG_DIR):
 if not os.path.exists(WEIGHTS_DIR):
     os.makedirs(WEIGHTS_DIR)
 
-# Useful vars
 total_epochs = 100
 total_train_images = len([name for name in os.listdir(os.path.join(DATASET_DIR, "train", "images")) if os.path.isfile(os.path.join(os.path.join(DATASET_DIR, "train", "images"), name)) and name.endswith('.jpg')])
 total_val_images = len([name for name in os.listdir(os.path.join(DATASET_DIR, "val", "images")) if os.path.isfile(os.path.join(os.path.join(DATASET_DIR, "val", "images"), name)) and name.endswith('.jpg')])
 
 
-# Utility functions to read/write the last completed epoch and best validation loss
 def read_last_epoch(file_path):
-    """Reads the last completed epoch from the file."""
     if os.path.exists(file_path):
         with open(file_path, 'r') as f:
             return int(f.read().strip())
@@ -48,7 +44,6 @@ def read_last_epoch(file_path):
 
 
 def write_last_epoch(file_path, epoch):
-    """Writes the last completed epoch to the file."""
     with open(file_path, 'w') as f:
         f.write(str(epoch))
 
@@ -57,7 +52,7 @@ def read_best_iou(file_path):
     if os.path.exists(file_path):
         with open(file_path, 'r') as f:
             return float(f.read().strip())
-    return 0  # If no file exists, return infinity to ensure any new loss is better
+    return 0
 
 
 def write_best_iou(file_path, mean_iou):
@@ -66,29 +61,22 @@ def write_best_iou(file_path, mean_iou):
 
 
 def read_wait_counter(file_path):
-    """Reads the wait counter from a file."""
     if os.path.exists(file_path):
         with open(file_path, 'r') as f:
             return int(f.read().strip())
-    return 0  # If the file doesn't exist, return 0 (no wait yet)
+    return 0
 
 
 def write_wait_counter(file_path, wait):
-    """Writes the wait counter to a file."""
     with open(file_path, 'w') as f:
         f.write(str(wait))
 
-
-# Set initial_epoch, best_iou, and wait from files
 initial_epoch = read_last_epoch(EPOCH_FILE_PATH)
 best_iou = read_best_iou(BEST_IOU_FILE_PATH)
 wait_counter = read_wait_counter(WAIT_COUNTER_FILE_PATH)
 
-
-# Datasets setup
 class DiseaseDataset(mrcnn.utils.Dataset):
     def load_dataset(self, dataset_dir, subset):
-        """Load a subset of the Plant Disease dataset."""
         self.add_class("dataset", 1, "plant_disease")
 
         subset_dir = os.path.join(dataset_dir, subset)
@@ -103,17 +91,15 @@ class DiseaseDataset(mrcnn.utils.Dataset):
             self.add_image("dataset", image_id=image_id, path=image_path, mask_path=mask_path)
 
     def load_mask(self, image_id):
-        """Generate instance masks for an image."""
         info = self.image_info[image_id]
         mask_path = info['mask_path']
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-        mask = (mask > 0).astype(np.uint8)  # Convert to binary mask
-        mask = np.expand_dims(mask, axis=-1)  # Add an extra dimension
+        mask = (mask > 0).astype(np.uint8)
+        mask = np.expand_dims(mask, axis=-1)
         class_ids = np.array([1], dtype=np.int32)
         return mask, class_ids
 
 
-# Configurations
 class TrainConfig(mrcnn.config.Config):
     NAME = "train_cfg"
     GPU_COUNT = 1
@@ -134,7 +120,6 @@ class InferConfig(TrainConfig):
 
 inference_config = InferConfig()
 
-# Dataset Preparation
 dataset_train = DiseaseDataset()
 dataset_train.load_dataset(DATASET_DIR, "train")
 dataset_train.prepare()
@@ -143,19 +128,17 @@ dataset_val = DiseaseDataset()
 dataset_val.load_dataset(DATASET_DIR, "val")
 dataset_val.prepare()
 
-# Model Initialization
 model = mrcnn.model.MaskRCNN(mode="training", config=training_config, model_dir=MODEL_DIR)
 
-# Custom Callback for Metrics, Early Stopping and Model Checkpointing
 class MetricsCallback(tf.keras.callbacks.Callback):
     def __init__(self, log_file=os.path.join(LOG_DIR, "maskrcnn.log"), patience=10):
         super(MetricsCallback, self).__init__()
         self.log_file = log_file
         self.start_time = None
-        self.best_iou = best_iou  # Initialize with the loaded best iou
+        self.best_iou = best_iou
         self.best_checkpoint_path = BEST_MODEL_PATH
-        self.patience = patience  # Early stopping patience (number of epochs without improvement)
-        self.wait = wait_counter  # Initialize with the loaded wait counter
+        self.patience = patience
+        self.wait = wait_counter
 
         if not os.path.exists(self.log_file):
             with open(self.log_file, 'w') as f:
@@ -169,7 +152,6 @@ class MetricsCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        # Update the epoch file
         write_last_epoch(EPOCH_FILE_PATH, read_last_epoch(EPOCH_FILE_PATH) + 1)
         print(f'\nEpoch {read_last_epoch(EPOCH_FILE_PATH)} Metrics:')
         end_time = datetime.now()
@@ -180,7 +162,6 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         model_path = os.path.join(WEIGHTS_DIR, model_name)
         self.model.save_weights(model_path)
 
-        # Evaluate model on validation data and compute custom metrics
         inference_model = mrcnn.model.MaskRCNN(mode='inference',
                                                model_dir=MODEL_DIR,
                                                config=inference_config)
@@ -235,19 +216,17 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         loss = logs.get('loss', 'N/A')
         val_loss = logs.get('val_loss', 'N/A')
 
-        # Check if the current IoU is better than the best IoU
         if mean_iou_value > self.best_iou:
             print(f"Mean IoU improved from {self.best_iou:.4f} to {mean_iou_value:.4f}. Saving model checkpoint.")
             self.best_iou = mean_iou_value
             self.model.save_weights(self.best_checkpoint_path)
             write_best_iou(BEST_IOU_FILE_PATH, mean_iou_value)
-            self.wait = 0  # Reset the counter if the IoU improves
+            self.wait = 0
         else:
-            self.wait += 1  # Increment the counter if no improvement
+            self.wait += 1
             print(f"No improvement in IoU for {self.wait} epoch(s).")
-        write_wait_counter(WAIT_COUNTER_FILE_PATH, self.wait)  # Save the wait counter to file
+        write_wait_counter(WAIT_COUNTER_FILE_PATH, self.wait)
 
-        # Early stopping condition
         if self.wait >= self.patience:
             print(f"Stopping training after {self.patience} epochs without improvement in IoU.")
             self.model.stop_training = True
@@ -260,18 +239,14 @@ class MetricsCallback(tf.keras.callbacks.Callback):
         for metric_name, metric_value in logs.items():
             print(f'{metric_name}: {metric_value:.4f}')
 
+metrics_callback = MetricsCallback(patience=10)
 
-# Training Logic with Mask R-CNN Setup
-metrics_callback = MetricsCallback(patience=10)  # Set patience to 10 epochs
-
-# Load the best model checkpoint if it exists
 if os.path.exists(BEST_MODEL_PATH):
     print(f"Loading best model weights from: {BEST_MODEL_PATH}")
     model.load_weights(BEST_MODEL_PATH, by_name=True)
 else:
     print("No best model found, starting from scratch.")
 
-# Manually control the training loop to restart from a specific epoch
 for epoch in range(initial_epoch, total_epochs):
     print(f"epoch: {epoch}, init epoch: {initial_epoch}, total epoch: {total_epochs}, wait counter: {wait_counter}")
     if(wait_counter < 10):
